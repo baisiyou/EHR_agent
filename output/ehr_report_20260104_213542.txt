@@ -1,0 +1,17 @@
+============================================================
+EHR Agent 问诊报告
+============================================================
+
+【患者信息】
+name: 张汝冰
+age: 57
+gender: 男
+medical_history: 动眼神经麻痹 高血脂
+allergies: 无
+current_medications: 阿司匹林
+
+【问诊记录】
+我胸痛，嗓子痛
+
+错误: 404 models/gemini-pro is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+未推荐检查项目
