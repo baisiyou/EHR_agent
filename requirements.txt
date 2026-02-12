@@ -1,0 +1,6 @@
+# EHR Agent Web Application Dependencies
+flask>=3.0.0
+flask-cors>=4.0.0
+python-dotenv>=1.0.0
+google-generativeai>=0.3.0
+gunicorn>=21.0.0

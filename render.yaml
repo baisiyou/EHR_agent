@@ -1,0 +1,21 @@
+# Render Blueprint - EHR Agent 部署配置
+# 文档: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: ehr-agent
+    runtime: python
+
+    # 构建配置
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+
+    # 健康检查（使用应用自带的 /health 端点）
+    healthCheckPath: /health
+
+    # 环境变量 - GOOGLE_API_KEY 需在 Render Dashboard 中手动添加（保密）
+    envVars:
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
