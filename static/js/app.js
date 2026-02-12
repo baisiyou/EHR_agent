@@ -6,55 +6,79 @@ let soapData = null;
 
 // 初始化
 document.addEventListener('DOMContentLoaded', function() {
+    applyTranslations();
+    setActiveLangButton();
+    setupLangSwitcher();
     initializeSpeechRecognition();
     setupEventListeners();
     updateCharCount();
 });
+
+function setupLangSwitcher() {
+    document.querySelectorAll('.lang-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const lang = btn.getAttribute('data-lang');
+            setLanguage(lang);
+            setActiveLangButton();
+        });
+    });
+}
+
+function setActiveLangButton() {
+    const lang = getLanguage();
+    document.querySelectorAll('.lang-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-lang') === lang);
+    });
+}
+
+function onLanguageChange(lang) {
+    if (recognition) {
+        recognition.lang = getSpeechLang();
+    }
+    const startBtn = document.getElementById('start-recording');
+    if (startBtn.disabled && startBtn.querySelector('.icon')) {
+        const icon = startBtn.querySelector('.icon').outerHTML;
+        startBtn.innerHTML = icon + ' ' + t('notSupported');
+    }
+}
 
 // 初始化语音识别
 function initializeSpeechRecognition() {
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         recognition = new SpeechRecognition();
-        recognition.lang = 'zh-CN';
+        recognition.lang = getSpeechLang();
         recognition.continuous = true;
         recognition.interimResults = true;
         
         recognition.onstart = function() {
             isRecording = true;
-            updateRecordingStatus('正在录音...', true);
+            updateRecordingStatus(t('recording'), true);
             document.getElementById('start-recording').disabled = true;
             document.getElementById('stop-recording').disabled = false;
         };
         
         recognition.onresult = function(event) {
-            let interimTranscript = '';
             let finalTranscript = '';
-            
             for (let i = event.resultIndex; i < event.results.length; i++) {
                 const transcript = event.results[i][0].transcript;
                 if (event.results[i].isFinal) {
                     finalTranscript += transcript + ' ';
-                } else {
-                    interimTranscript += transcript;
                 }
             }
-            
             const textarea = document.getElementById('consultation-text');
-            const currentText = textarea.value;
-            textarea.value = currentText + finalTranscript;
+            textarea.value = textarea.value + finalTranscript;
             updateCharCount();
         };
         
         recognition.onerror = function(event) {
-            console.error('语音识别错误:', event.error);
-            updateRecordingStatus('语音识别错误: ' + event.error, false);
+            console.error('Speech recognition error:', event.error);
+            updateRecordingStatus(t('recordingError') + event.error, false);
             stopRecording();
         };
         
         recognition.onend = function() {
             if (isRecording) {
-                // 如果还在录音状态，自动重新开始（实现连续录音）
                 try {
                     recognition.start();
                 } catch (e) {
@@ -64,413 +88,316 @@ function initializeSpeechRecognition() {
         };
     } else {
         document.getElementById('start-recording').disabled = true;
-        document.getElementById('start-recording').innerHTML = '<span class="icon">⚠️</span> 浏览器不支持语音识别';
+        document.getElementById('start-recording').innerHTML = '<span class="icon">⚠️</span> ' + t('notSupported');
     }
 }
 
 // 设置事件监听器
 function setupEventListeners() {
-    // 录音控制
     document.getElementById('start-recording').addEventListener('click', startRecording);
     document.getElementById('stop-recording').addEventListener('click', stopRecording);
     document.getElementById('clear-text').addEventListener('click', clearText);
-    
-    // 文本输入
     document.getElementById('consultation-text').addEventListener('input', function() {
         updateCharCount();
         updateButtonStates();
     });
-    
-    // 功能按钮
     document.getElementById('generate-soap').addEventListener('click', generateSOAP);
     document.getElementById('recommend-exams').addEventListener('click', recommendExaminations);
     document.getElementById('check-drugs').addEventListener('click', checkDrugConflicts);
     document.getElementById('save-report').addEventListener('click', saveReport);
 }
 
-// 开始录音
 function startRecording() {
     if (recognition && !isRecording) {
         try {
             recognition.start();
         } catch (e) {
-            console.error('启动录音失败:', e);
-            updateRecordingStatus('启动录音失败，请检查麦克风权限', false);
+            console.error('Start recording failed:', e);
+            updateRecordingStatus(t('startFailed'), false);
         }
     }
 }
 
-// 停止录音
 function stopRecording() {
     if (recognition && isRecording) {
         isRecording = false;
         recognition.stop();
-        updateRecordingStatus('录音已停止', false);
+        updateRecordingStatus(t('recordingStopped'), false);
         document.getElementById('start-recording').disabled = false;
         document.getElementById('stop-recording').disabled = true;
     }
 }
 
-// 更新录音状态
-function updateRecordingStatus(message, isRecording) {
+function updateRecordingStatus(message, isRecordingStatus) {
     const statusEl = document.getElementById('recording-status');
     statusEl.textContent = message;
-    statusEl.className = 'status-message' + (isRecording ? ' recording' : '');
+    statusEl.className = 'status-message' + (isRecordingStatus ? ' recording' : '');
 }
 
-// 清空文本
 function clearText() {
-    if (confirm('确定要清空问诊记录吗？')) {
+    if (confirm(t('confirmClear'))) {
         document.getElementById('consultation-text').value = '';
         updateCharCount();
         updateButtonStates();
     }
 }
 
-// 更新字符计数
 function updateCharCount() {
     const text = document.getElementById('consultation-text').value;
     document.getElementById('char-count').textContent = text.length;
 }
 
-// 更新按钮状态
 function updateButtonStates() {
     const hasText = document.getElementById('consultation-text').value.trim().length > 0;
     document.getElementById('generate-soap').disabled = !hasText;
 }
 
-// 显示加载提示
 function showLoading() {
+    const p = document.querySelector('#loading p');
+    if (p) p.textContent = t('loading');
     document.getElementById('loading').classList.remove('hidden');
 }
 
-// 隐藏加载提示
 function hideLoading() {
     document.getElementById('loading').classList.add('hidden');
 }
 
-// 获取患者信息
+const genderValueToLabel = { not_provided: 'patientGenderPlaceholder', male: 'patientGenderMale', female: 'patientGenderFemale', other: 'patientGenderOther' };
+
 function getPatientInfo() {
+    const notProvided = t('notProvided');
+    const none = t('none');
+    const genderVal = document.getElementById('patient-gender').value;
+    const genderLabel = genderValueToLabel[genderVal] ? t(genderValueToLabel[genderVal]) : genderVal;
     return {
-        name: document.getElementById('patient-name').value || '未提供',
-        age: document.getElementById('patient-age').value || '未提供',
-        gender: document.getElementById('patient-gender').value || '未提供',
-        medical_history: document.getElementById('patient-history').value || '无',
-        allergies: document.getElementById('patient-allergies').value || '无',
-        current_medications: document.getElementById('patient-medications').value || '无'
+        name: document.getElementById('patient-name').value || notProvided,
+        age: document.getElementById('patient-age').value || notProvided,
+        gender: genderVal,
+        gender_display: genderLabel,
+        medical_history: document.getElementById('patient-history').value || none,
+        allergies: document.getElementById('patient-allergies').value || none,
+        current_medications: document.getElementById('patient-medications').value || none
     };
 }
 
-// 生成 SOAP 病历
 async function generateSOAP() {
     const transcript = document.getElementById('consultation-text').value.trim();
     if (!transcript) {
-        alert('请先输入问诊记录');
+        alert(t('enterTranscript'));
         return;
     }
-    
     showLoading();
-    
     try {
         const response = await fetch('/api/generate-soap', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                transcript: transcript,
-                patient_info: getPatientInfo()
-            })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ transcript, patient_info: getPatientInfo() })
         });
-        
         const result = await response.json();
-        
         if (result.success) {
             soapData = result.data;
             displaySOAP(result.data);
             document.getElementById('recommend-exams').disabled = false;
             document.getElementById('check-drugs').disabled = false;
         } else {
-            alert('生成 SOAP 病历失败: ' + result.error);
+            alert(t('generateSOAPFailed') + result.error);
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('请求失败: ' + error.message);
+        alert(t('requestFailed') + error.message);
     } finally {
         hideLoading();
     }
 }
 
-// 显示 SOAP 病历
 function displaySOAP(data) {
+    const notProvided = t('notProvided');
+    const errPrefix = t('error');
     if (data.error) {
-        document.getElementById('soap-content').textContent = '错误: ' + data.error;
+        document.getElementById('soap-content').textContent = errPrefix + data.error;
     } else {
-        let html = `
-            <h3>主诉</h3>
-            <p>${data.chief_complaint || '未提供'}</p>
-            
-            <h3>主观资料 (S - Subjective)</h3>
+        const html = `
+            <h3>${t('chiefComplaint')}</h3>
+            <p>${data.chief_complaint || notProvided}</p>
+            <h3>${t('subjective')}</h3>
             <p>${data.subjective || ''}</p>
-            
-            <h3>客观资料 (O - Objective)</h3>
+            <h3>${t('objective')}</h3>
             <p>${data.objective || ''}</p>
-            
-            <h3>评估 (A - Assessment)</h3>
+            <h3>${t('assessment')}</h3>
             <p>${data.assessment || ''}</p>
-            
-            <h3>计划 (P - Plan)</h3>
+            <h3>${t('plan')}</h3>
             <p>${data.plan || ''}</p>
-            
-            <h3>初步诊断</h3>
-            <ul>
-                ${(data.preliminary_diagnosis || []).map(d => `<li>${d}</li>`).join('')}
-            </ul>
+            <h3>${t('preliminaryDiagnosis')}</h3>
+            <ul>${(data.preliminary_diagnosis || []).map(d => `<li>${d}</li>`).join('')}</ul>
         `;
         document.getElementById('soap-content').innerHTML = html;
         document.getElementById('soap-section').classList.remove('hidden');
     }
 }
 
-// 推荐检查项目
 async function recommendExaminations() {
     if (!soapData) {
-        alert('请先生成 SOAP 病历');
+        alert(t('generateFirst'));
         return;
     }
-    
     showLoading();
-    
     try {
         const transcript = document.getElementById('consultation-text').value.trim();
         const response = await fetch('/api/recommend-examinations', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                soap_data: soapData,
-                transcript: transcript
-            })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ soap_data: soapData, transcript })
         });
-        
         const result = await response.json();
-        
         if (result.success) {
             displayExaminations(result.data);
         } else {
-            alert('推荐检查项目失败: ' + result.error);
+            alert(t('recommendFailed') + result.error);
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('请求失败: ' + error.message);
+        alert(t('requestFailed') + error.message);
     } finally {
         hideLoading();
     }
 }
 
-// 显示检查项目推荐
 function displayExaminations(examinations) {
+    const reason = t('reason');
+    const noExams = t('noExams');
     if (!examinations || examinations.length === 0) {
-        document.getElementById('examinations-content').textContent = '未推荐检查项目';
+        document.getElementById('examinations-content').textContent = noExams;
     } else {
-        // 按优先级分组
+        const priorityMap = { '高': 'priorityHigh', '中': 'priorityMedium', '低': 'priorityLow' };
         const high = examinations.filter(e => e.priority === '高');
         const medium = examinations.filter(e => e.priority === '中');
         const low = examinations.filter(e => e.priority === '低');
-        
         let html = '';
-        
-        if (high.length > 0) {
-            html += '<h3>高优先级</h3><ul>';
-            high.forEach(e => {
-                html += `<li><strong>${e.name}</strong> (${e.type})<br>理由: ${e.reason}</li>`;
-            });
-            html += '</ul>';
-        }
-        
-        if (medium.length > 0) {
-            html += '<h3>中优先级</h3><ul>';
-            medium.forEach(e => {
-                html += `<li><strong>${e.name}</strong> (${e.type})<br>理由: ${e.reason}</li>`;
-            });
-            html += '</ul>';
-        }
-        
-        if (low.length > 0) {
-            html += '<h3>低优先级</h3><ul>';
-            low.forEach(e => {
-                html += `<li><strong>${e.name}</strong> (${e.type})<br>理由: ${e.reason}</li>`;
-            });
-            html += '</ul>';
-        }
-        
+        [high, medium, low].forEach((arr, i) => {
+            const key = ['priorityHigh', 'priorityMedium', 'priorityLow'][i];
+            if (arr.length > 0) {
+                html += `<h3>${t(key)}</h3><ul>`;
+                arr.forEach(e => {
+                    html += `<li><strong>${e.name}</strong> (${e.type})<br>${reason}: ${e.reason}</li>`;
+                });
+                html += '</ul>';
+            }
+        });
         document.getElementById('examinations-content').innerHTML = html;
         document.getElementById('examinations-section').classList.remove('hidden');
     }
 }
 
-// 检查药物冲突
 async function checkDrugConflicts() {
     if (!soapData || !soapData.plan) {
-        alert('请先生成 SOAP 病历');
+        alert(t('generateFirst'));
         return;
     }
-    
     showLoading();
-    
     try {
         const response = await fetch('/api/check-drug-conflicts', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                plan_text: soapData.plan,
-                patient_info: getPatientInfo()
-            })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ plan_text: soapData.plan, patient_info: getPatientInfo() })
         });
-        
         const result = await response.json();
-        
         if (result.success) {
             displayDrugCheck(result.data, result.prescribed_drugs);
             document.getElementById('save-report').disabled = false;
         } else {
-            alert('检查药物冲突失败: ' + result.error);
+            alert(t('checkFailed') + result.error);
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('请求失败: ' + error.message);
+        alert(t('requestFailed') + error.message);
     } finally {
         hideLoading();
     }
 }
 
-// 显示药物冲突检查结果
 function displayDrugCheck(data, prescribedDrugs) {
+    const severityMap = { '高': 'severityHigh', '中': 'severityMedium', '低': 'severityLow', '无': 'severityNone' };
     let html = '';
-    
     if (prescribedDrugs && prescribedDrugs.length > 0) {
-        html += `<h3>检测到的药物</h3><p>${prescribedDrugs.join(', ')}</p>`;
+        html += `<h3>${t('detectedDrugs')}</h3><p>${prescribedDrugs.join(', ')}</p>`;
     }
-    
     if (data.message) {
         html += `<p>${data.message}</p>`;
     } else {
-        const severity = data.severity || '未知';
-        const severityText = {
-            '高': '⚠️ 高风险',
-            '中': '⚡ 中等风险',
-            '低': 'ℹ️ 低风险',
-            '无': '✅ 无风险'
-        };
-        
-        html += `<h3>总体评估</h3><p>${severityText[severity] || severity}</p>`;
-        
-        if (data.allergy_warnings && data.allergy_warnings.length > 0) {
-            html += '<h3>过敏警告</h3><ul>';
+        const sev = data.severity || '未知';
+        const sevKey = severityMap[sev] || 'severityUnknown';
+        const emoji = { severityHigh: '⚠️', severityMedium: '⚡', severityLow: 'ℹ️', severityNone: '✅', severityUnknown: '❓' };
+        html += `<h3>${t('overallAssessment')}</h3><p>${emoji[sevKey] || '⚠️'} ${t(sevKey)}</p>`;
+        if (data.allergy_warnings?.length) {
+            html += `<h3>${t('allergyWarnings')}</h3><ul>`;
             data.allergy_warnings.forEach(w => html += `<li>⚠️ ${w}</li>`);
             html += '</ul>';
         }
-        
-        if (data.drug_interactions && data.drug_interactions.length > 0) {
-            html += '<h3>药物相互作用</h3><ul>';
+        if (data.drug_interactions?.length) {
+            html += `<h3>${t('drugInteractions')}</h3><ul>`;
             data.drug_interactions.forEach(i => {
-                if (typeof i === 'object') {
-                    html += `<li>⚠️ ${i.drugs}: ${i.description}</li>`;
-                } else {
-                    html += `<li>⚠️ ${i}</li>`;
-                }
+                html += `<li>⚠️ ${typeof i === 'object' ? i.drugs + ': ' + i.description : i}</li>`;
             });
             html += '</ul>';
         }
-        
-        if (data.contraindications && data.contraindications.length > 0) {
-            html += '<h3>禁忌症</h3><ul>';
+        if (data.contraindications?.length) {
+            html += `<h3>${t('contraindications')}</h3><ul>`;
             data.contraindications.forEach(c => html += `<li>🚫 ${c}</li>`);
             html += '</ul>';
         }
-        
-        if (data.dosage_warnings && data.dosage_warnings.length > 0) {
-            html += '<h3>剂量警告</h3><ul>';
+        if (data.dosage_warnings?.length) {
+            html += `<h3>${t('dosageWarnings')}</h3><ul>`;
             data.dosage_warnings.forEach(w => html += `<li>⚠️ ${w}</li>`);
             html += '</ul>';
         }
-        
-        if (data.recommendations && data.recommendations.length > 0) {
-            html += '<h3>建议</h3><ul>';
+        if (data.recommendations?.length) {
+            html += `<h3>${t('recommendations')}</h3><ul>`;
             data.recommendations.forEach(r => html += `<li>💡 ${r}</li>`);
             html += '</ul>';
         }
-        
-        if (!data.has_conflicts && (!data.allergy_warnings || data.allergy_warnings.length === 0) && 
-            (!data.drug_interactions || data.drug_interactions.length === 0)) {
-            html += '<p>✅ 未发现明显的药物冲突或安全风险。</p>';
+        if (!data.has_conflicts && !data.allergy_warnings?.length && !data.drug_interactions?.length) {
+            html += `<p>✅ ${t('noRisk')}</p>`;
         }
     }
-    
     document.getElementById('drug-check-content').innerHTML = html;
     document.getElementById('drug-check-section').classList.remove('hidden');
 }
 
-// 保存报告
 async function saveReport() {
     showLoading();
-    
     try {
-        // 构建报告内容
-        let report = '='.repeat(60) + '\n';
-        report += 'EHR Agent 问诊报告\n';
-        report += '='.repeat(60) + '\n\n';
-        
-        // 患者信息
         const patientInfo = getPatientInfo();
-        report += '【患者信息】\n';
-        report += `姓名: ${patientInfo.name}\n`;
-        report += `年龄: ${patientInfo.age}\n`;
-        report += `性别: ${patientInfo.gender}\n`;
-        report += `既往史: ${patientInfo.medical_history}\n`;
-        report += `过敏史: ${patientInfo.allergies}\n`;
-        report += `当前用药: ${patientInfo.current_medications}\n\n`;
-        
-        // 问诊记录
-        report += '【问诊记录】\n';
-        report += document.getElementById('consultation-text').value + '\n\n';
-        
-        // SOAP 病历
+        const patientInfoLabel = t('reportPatientInfo');
+        const consultationLabel = t('reportConsultation');
+        const soapLabel = t('reportSOAP');
+        const notProvided = t('notProvided');
+        let report = '='.repeat(60) + '\nEHR Agent Report\n' + '='.repeat(60) + '\n\n';
+        report += patientInfoLabel + '\n';
+        report += `${t('reportName')}: ${patientInfo.name}\n${t('reportAge')}: ${patientInfo.age}\n${t('reportGender')}: ${patientInfo.gender_display || patientInfo.gender}\n`;
+        report += `${t('reportHistory')}: ${patientInfo.medical_history}\n${t('reportAllergies')}: ${patientInfo.allergies}\n${t('reportMeds')}: ${patientInfo.current_medications}\n\n`;
+        report += consultationLabel + '\n' + document.getElementById('consultation-text').value + '\n\n';
         if (soapData) {
-            report += '【SOAP 病历】\n';
-            report += `主诉: ${soapData.chief_complaint || '未提供'}\n\n`;
-            report += `主观资料 (S):\n${soapData.subjective || ''}\n\n`;
-            report += `客观资料 (O):\n${soapData.objective || ''}\n\n`;
-            report += `评估 (A):\n${soapData.assessment || ''}\n\n`;
-            report += `计划 (P):\n${soapData.plan || ''}\n\n`;
-            report += `初步诊断: ${(soapData.preliminary_diagnosis || []).join(', ')}\n\n`;
+            report += soapLabel + '\n';
+            report += `${t('reportChiefComplaint')}: ${soapData.chief_complaint || notProvided}\n\n`;
+            report += `Subjective:\n${soapData.subjective || ''}\n\nObjective:\n${soapData.objective || ''}\n\n`;
+            report += `Assessment:\n${soapData.assessment || ''}\n\nPlan:\n${soapData.plan || ''}\n\n`;
+            report += `${t('reportDiagnosis')}: ${(soapData.preliminary_diagnosis || []).join(', ')}\n\n`;
         }
-        
         const response = await fetch('/api/save-report', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                content: report
-            })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: report })
         });
-        
         const result = await response.json();
-        
         if (result.success) {
-            alert(`报告已保存: ${result.filename}`);
+            alert(t('reportSaved') + result.filename);
         } else {
-            alert('保存报告失败: ' + result.error);
+            alert(t('saveFailed') + result.error);
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('保存失败: ' + error.message);
+        alert(t('saveFailed') + error.message);
     } finally {
         hideLoading();
     }
 }
-
